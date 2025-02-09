@@ -1,0 +1,367 @@
+<body>
+    <nav>
+        <!-- <button id="add_c" onclick="editMode()">Edit Mode</button>
+        <button id="edit_c" onclick="viewMode()">View Mode</button> -->
+        <button id="select" onclick="selectItem()">Select (next) Item</button>
+        <button id="delete" onclick="deleteItem()">Delete Selected Item</button>
+        <!-- <select id="curveType">
+            <option value="hermite">Hermite Spline</option>
+            <option value="bezier">Bezier Curve</option>
+            <option value="bSpline">B-Spline</option>
+        </select> -->
+        <label for="sizeSlider">Size: </label>
+        <input type="range" id="sizeSlider" min="0.3" max="2" step="0.05" value="1.0" oninput="updateSize()">
+    </nav>    
+
+    <canvas id='canvas1' width="700" height="700"></canvas>
+    <!-- <canvas id='canvas2' width="100" height="700"></canvas> -->
+        <!-- Left -->
+    <div class="side-buttons left-buttons">
+        Select A Platform:
+        <button onclick="selectPlatform(floor)">Select Floor</button>
+        <button onclick="selectPlatform(back_wall)">Select Back Wall</button>
+        <button onclick="selectPlatform(no_platform)">Deselect Platform</button>
+        <button onclick="hidePlatform(left_wall)">Hide Left Wall</button>
+        <button onclick="hidePlatform(right_wall)">Hide Right Wall</button>
+        Move Item:
+        <button onclick="moveItem('red')">Move 1 Unit -> Red</button>
+        <button onclick="moveItem('blue')">Move 1 Unit -> blue</button>
+        <button onclick="rotateItem('red')">Rotate -> red</button>
+        <button onclick="rotateItem('blue')">Rotate -> blue</button>
+        <button onclick="stopChangeItem()">Check!</button>
+    </div>
+
+    <!-- Right -->
+    <div class="side-buttons right-buttons">
+        Add Furniture:
+        <button onclick="addItem('chair')">Chair</button>
+        <button onclick="addItem('table')">Table</button>
+        <button onclick="addItem('bed')">Bed</button>
+        <button onclick="addItem('sofa')">Sofa</button>
+        Add Small Things (can be on Table):
+        <button onclick="addItem('television')">Television</button>
+        <button onclick="addItem('computer')">Computer</button>
+        Add Wall Decorations:
+        <button onclick="addItem('painting')">Painting</button>
+        <button onclick="addItem('clock')">Clock</button>
+    </div>
+
+    <script src=lib.js></script>
+    <script src=lib2.js></script>
+    <script>
+    
+    let uTime = gl.getUniformLocation(gl.program, "uTime");
+    let uFL = gl.getUniformLocation(gl.program, "uFL");
+    let uCursor = gl.getUniformLocation(gl.program, "uCursor");
+    let uL = gl.getUniformLocation(gl.program, "uL");
+    let uMaterials = gl.getUniformLocation(gl.program, "uMaterials");
+    let uA = gl.getUniformLocation(gl.program, "uA");
+    let uB = gl.getUniformLocation(gl.program, "uB");
+    let uC = gl.getUniformLocation(gl.program, "uC");
+
+    let materials = [
+        [1.0, 0.8, 0.0],  // Orange
+        [0.5, 0.1, 0.8],  // Indigo
+        [0.2, 0.5, 0.3]   // Example
+    ];
+
+gl.uniform3fv(uMaterials, materials.flat());
+
+
+        //audio
+        // let audio = new Audio('music.mp3');
+        // audio.loop = true;
+        //texture
+        const importTexture = () => {
+            texture(0, "p1.png");
+            texture(1, "p2.jpg");
+            texture(2, "p3.jpg");
+            texture(3, "p4.jpg");
+            texture(9, "leather.png");
+            texture(10, "bed.png");
+            texture(11, "wood.png");
+            texture(12, "iron.png");
+        }
+        importTexture();
+        //mouse
+        let mx, my, rx = 0, ry = 0;
+        canvas1.onmousedown = e => { mx = e.clientX; my = e.clientY; }
+        canvas1.onmousemove = e => { if (mx) { rx += e.clientX - mx; ry += e.clientY - my; mx = e.clientX; my = e.clientY; } }
+        canvas1.onmouseup = e => mx = undefined;
+        //slider
+        let size = 1.0;
+        function updateSize() {
+            size = document.getElementById('sizeSlider').value;
+            document.getElementById('sliderValue').innerText = size;
+            console.log("Current Size:", size);
+        }
+        let viewOffsetX = 0;
+        let viewOffsetY = 0;
+        document.addEventListener('keydown', (e) => {
+        const step = 0.1; 
+        if (e.key === 'ArrowRight') {
+            viewOffsetX -= step;
+        } else if (e.key === 'ArrowLeft') {
+            viewOffsetX += step;
+        }
+        if (e.key === 'ArrowUp') {
+            viewOffsetY -= step;
+        } else if (e.key === 'ArrowDown') {
+            viewOffsetY += step;
+        }
+        // console.log("View Offset X:", viewOffsetX);
+    });
+
+        //add default instance
+        addItem('television');
+        moveItem('red');
+        moveItem('blue');
+        moveItem('blue');
+        stopChangeItem();
+
+        addItem('chair');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        stopChangeItem();
+
+        addItem('chair');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('blue');
+        moveItem('blue');
+        rotateItem('red');
+        rotateItem('red');
+        stopChangeItem();
+
+        addItem('table');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        stopChangeItem();
+
+        addItem('computer');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        stopChangeItem();
+
+        addItem('bed');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('blue');
+        stopChangeItem();
+
+
+
+        addItem('clock');
+        moveItem('blue');
+        moveItem('blue');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        moveItem('red');
+        stopChangeItem();
+
+        // addItem("sofa")
+        // addItem('painting');
+        // stopChangeItem();
+        
+
+        // selectedInstance = tele;
+
+        function drawFrame() {
+            gl.viewport(0, 0, canvas1.height, canvas1.height);
+            // console.log("Instance Number: ", allInstance.length);
+            //show floor condition
+            // console.table(floor_condi);
+
+            requestAnimationFrame(drawFrame);
+            M.S();
+                M.move(viewOffsetX,viewOffsetY,0).scale(size);
+                changeWithCursor();
+
+                //Basic Room
+                M.S().scale(1);
+                    drawBasicRoom();
+                M.R();
+
+                
+
+                //Television
+                M.S().scale(1).move(0,0,0);
+                    // M.turnX(Math.PI / 12).turnY(Math.PI / 12);
+                    drawAllInstance();
+                    // drawTelevision();  
+                    // M.move(-.8,0,0);
+                    // drawTelevision();     
+                M.R();
+                
+            
+            M.R();
+            
+
+            // M.R();   
+        }
+        requestAnimationFrame(drawFrame);
+
+    </script>
+
+    <style>
+        body {
+            background: linear-gradient(to bottom right, #2c6262, #45a049);
+            color: #ffffff;
+            margin: 0;
+        }
+
+        #canvas1 {
+            flex-direction: column;
+            position: absolute;
+            left: 300px;
+            top: 100px;
+            background-color: #a8cac1;
+        }
+
+        #canvas2 {
+            flex-direction: column;
+            position: absolute;
+            right: 50px;
+            top: 100px;
+            background-color: #a8cac1;
+        }
+
+        nav {
+            position: absolute; 
+            left: 50px; 
+            top: 20px;  
+            display: flex; 
+            gap: 20px; 
+            align-items: center;
+        }
+
+        button {
+            padding: 10px 20px; 
+            background-color: #2c6262;
+            color: rgb(238, 207, 10);
+            border: none; 
+            border-radius: 10px; 
+            cursor: pointer; 
+            font-size: 30px;
+        }
+
+        button:hover {
+            background-color: #45a049; 
+        }
+
+        select {
+            padding: 10px 20px; 
+            background-color: transparent;
+            color: rgb(238, 207, 10);
+            border: none; 
+            border-radius: 2px; 
+            cursor: pointer; 
+            font-size: 30px;
+        }
+
+        label {
+        color: #ffcc00; 
+        font-size: 30px; 
+        margin-right: 2px;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 200px; 
+            height: 20px;
+            background: #45a049; 
+            border-radius: 5px;
+            outline: none;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+            cursor: pointer;
+        }
+
+        input[type="range"]:hover {
+            opacity: 1;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px; 
+            height: 20px; 
+            background: #ffcc00; 
+            border: 2px solid #ffffff; 
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.2); 
+            transition: all 0.3s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            background: #ffa500;
+            transform: scale(1.1); 
+        }
+
+        
+        .side-buttons {
+            position: absolute;
+            top: 50%; 
+            transform: translateY(-50%); 
+            display: flex;
+            flex-direction: column; 
+            gap: 10px; 
+            color: #ffcc00; 
+            font-size: 20px; 
+
+        }
+
+        
+        .left-buttons {
+            left: 50px; 
+        }
+
+        
+        .right-buttons {
+            right: 50px; 
+        }
+
+        
+        .side-buttons button {
+            padding: 10px 20px;
+            background-color: #2c6262;
+            color: #ffcc00;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 20px;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .side-buttons button:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+        }
+
+    </style>
+</body>
