@@ -127,77 +127,65 @@ let selectPlatform = (platform) => {
     }
 }
 
+//the 8 * 8 table of taken cells of a platform
+let platformCondi = (platform) => {
+    if (platform == floor){
+        return floor_condi;
+    } else if (platform == left_wall){
+        return left_wall_condi;
+    } else if (platform == right_wall){
+        return right_wall_condi;
+    } else if (platform == back_wall){
+        return back_wall_condi;
+    }
+    return null;
+}
+
+//set every cell an item covers to 1 (taken) or 0 (free)
+let setCells = (item, value) => {
+    let condi = platformCondi(item.platform);
+    for (let i = item.pos_forward; i < item.pos_forward + item.unit_length_forward; i++){
+        for (let j = item.pos_right; j < item.pos_right + item.unit_length_right; j++){
+            condi[i][j] = value;
+        }
+    }
+}
+
 let selectItem = () => {
     if (mode == 'view'){
         return
     }
-    let index;
+    //floor furniture first, then wall decorations
+    let items = allInstance.concat(wallInstance);
+    let index = -1;
     if (selectedInstance != null){
-        //clear the selected place
-
-        index = allInstance.indexOf(selectedInstance);
+        index = items.indexOf(selectedInstance);
+        //stop editing the current one (it is removed if it cannot stay there)
         let can_be_added = stopChangeItem();
         if (!can_be_added){
             deleteItem();
         }
-        // console.log(index);
-        index += 1;
-        // console.log(index);
-        if (index >= allInstance.length){
-            index = 0;
-        }
-        selectedInstance = allInstance[index];
-    } else {
-        if (allInstance.length > 0){
-            index = 0;
-            selectedInstance = allInstance[0];
+    }
+    //the next item after the current one that is still in the room
+    let remaining = allInstance.concat(wallInstance);
+    selectedInstance = null;
+    for (let k = 1; k <= items.length; k++){
+        let candidate = items[(index + k) % items.length];
+        if (remaining.includes(candidate)){
+            selectedInstance = candidate;
+            break;
         }
     }
-    if (selectedInstance.platform == back_wall){
-        for (let i = selectedInstance.pos_forward; i < selectedInstance.pos_forward + selectedInstance.unit_length_forward; i++){
-            console.log("i: ", i);
-            for (let j = selectedInstance.pos_right; j < selectedInstance.pos_right + selectedInstance.unit_length_right; j++){
-                console.log("j: ", j);
-                console.table(floor_condi);
-                floor_condi[i][j] = 0;
-                console.table(floor_condi);
-            }
-        }
-        selectedInstance.is_under_editing = true;
+    if (selectedInstance == null){
+        //nothing to select, e.g. an empty room
+        return;
     }
+    console.log("Selected Index", remaining.indexOf(selectedInstance));
 
-    if (selectedInstance.platform == floor){
-        console.log("Selected Index", index);
-        console.log("Right Pos: ",selectedInstance.pos_right);
-        console.log("Right Length: ",selectedInstance.unit_length_right);
-        console.log("Forward Pos: ",selectedInstance.pos_forward);
-        console.log("Forward Length: ",selectedInstance.unit_length_forward);
-
-        if (selectedInstance.is_small_thing){
-            if (selectedInstance.is_placed_on_table){
-            } else {
-                for (let i = selectedInstance.pos_forward; i < selectedInstance.pos_forward + selectedInstance.unit_length_forward; i++){
-                    console.log("i: ", i);
-                    for (let j = selectedInstance.pos_right; j < selectedInstance.pos_right + selectedInstance.unit_length_right; j++){
-                        console.log("j: ", j);
-                        console.table(floor_condi);
-                        floor_condi[i][j] = 0;
-                        console.table(floor_condi);
-                    }
-                }
-            }
-        }
-        else {
-            for (let i = selectedInstance.pos_forward; i < selectedInstance.pos_forward + selectedInstance.unit_length_forward; i++){
-                console.log("i: ", i);
-                for (let j = selectedInstance.pos_right; j < selectedInstance.pos_right + selectedInstance.unit_length_right; j++){
-                    console.log("j: ", j);
-                    console.table(floor_condi);
-                    floor_condi[i][j] = 0;
-                    console.table(floor_condi);
-                }
-            }
-        }
+    //clear the selected place, it is free while the item is being edited
+    //(a small thing on a table shares the table's cells, they stay taken)
+    if (!selectedInstance.is_placed_on_table){
+        setCells(selectedInstance, 0);
     }
     selectedInstance.is_under_editing = true;
 }
@@ -308,44 +296,13 @@ let stopChangeItem = () => {
         }
         //when it is on the wall
         //don't need to check small thing
-        if (selectedInstance.platform == left_wall){
+        else {
+            let condi = platformCondi(selectedInstance.platform);
             let x = selectedInstance.pos_right;
             let y = selectedInstance.pos_forward;
             for (let i = x; i < x + selectedInstance.unit_length_right; i++){
                 for (let j = y; j < y + selectedInstance.unit_length_forward; j++){
-                    if (left_wall_condi[j][i] == 1){
-                        overlapping = true;
-                        flag = false;
-                        break;
-                    }
-                }
-            }
-            if (overlapping){
-                flag = false;
-            }
-        }
-        if (selectedInstance.platform == right_wall){
-            let x = selectedInstance.pos_right;
-            let y = selectedInstance.pos_forward;
-            for (let i = x; i < x + selectedInstance.unit_length_right; i++){
-                for (let j = y; j < y + selectedInstance.unit_length_forward; j++){
-                    if (right_wall_condi[j][i] == 1){
-                        overlapping = true;
-                        flag = false;
-                        break;
-                    }
-                }
-            }
-            if (overlapping){
-                flag = false;
-            }
-        }
-        if (selectedInstance.platform == back_wall){
-            let x = selectedInstance.pos_right;
-            let y = selectedInstance.pos_forward;
-            for (let i = x; i < x + selectedInstance.unit_length_right; i++){
-                for (let j = y; j < y + selectedInstance.unit_length_forward; j++){
-                    if (back_wall_condi[j][i] == 1){
+                    if (condi[j][i] == 1){
                         overlapping = true;
                         flag = false;
                         break;
@@ -357,33 +314,46 @@ let stopChangeItem = () => {
             }
         }
 
-
-        //set platform condition
-        //where the object is placed, set the condition to 1
-        for (let i = 0; i < selectedInstance.unit_length_right; i++){
-            for (let j = 0; j < selectedInstance.unit_length_forward; j++){
-                if (selectedInstance.platform == floor){
-                    floor_condi[selectedInstance.pos_forward + j][selectedInstance.pos_right + i] = 1;
-                } else if (selectedInstance.platform == left_wall){
-                    left_wall_condi[selectedInstance.pos_forward + j][selectedInstance.pos_right + i] = 1;
-                } else if (selectedInstance.platform == right_wall){
-                    right_wall_condi[selectedInstance.pos_forward + j][selectedInstance.pos_right + i] = 1;
-                } else if (selectedInstance.platform == back_wall){
-                    back_wall_condi[selectedInstance.pos_forward + j][selectedInstance.pos_right + i] = 1;
-                }
-            }
-        }
         //cosole log floor
         // for (let i = 0; i < floor_condi.length; i++){
         //     console.log(floor_condi[i]);
         // }
 
-        //if flag is true, then stop editing
+        //if flag is true, the place is fine: take its cells and stop editing
+        //(a failed check must not take any cell)
         if (flag){
+            setCells(selectedInstance, 1);
             selectedInstance.is_under_editing = false;
             selectedInstance = null;
         }
         return flag;
+    }
+}
+
+//take an item out of the room
+let removeInstance = (item) => {
+    item.visible = false;
+    for (let list of [allInstance, wallInstance]){
+        let index = list.indexOf(item);
+        if (index >= 0){
+            list.splice(index, 1);
+        }
+    }
+    //a small thing leaves its table
+    if (item.is_placed_on_table && item.placing_table){
+        let things = item.placing_table.item_on_table;
+        if (things.includes(item)){
+            things.splice(things.indexOf(item), 1);
+        }
+        item.is_placed_on_table = false;
+        item.placing_table = null;
+    }
+    //the things on a table go with it (same as when the table moves)
+    if (item.is_table){
+        for (let thing of item.item_on_table.slice()){
+            removeInstance(thing);
+        }
+        item.item_on_table = [];
     }
 }
 
@@ -392,9 +362,7 @@ let deleteItem = () => {
         return
     }
     if (selectedInstance != null){
-        selectedInstance.visible = false;
-        let index = allInstance.indexOf(selectedInstance);
-        allInstance.splice(index, 1);
+        removeInstance(selectedInstance);
         selectedInstance = null;
     }
 }
@@ -477,7 +445,8 @@ class Furniture {
         }
     }
 
-    //largest cell index the item may reach when moving forward / right
+    //largest cell index the item may cover going forward / right
+    //(an item covers the cells pos .. pos + length - 1)
     maxForward(){
         return 7;
     }
@@ -491,7 +460,7 @@ class Furniture {
             return pos + length - 1 < max;
         }
         if (step < 0){
-            return pos - length + 1 > 0;
+            return pos > 0;
         }
         return true;
     }
@@ -529,28 +498,22 @@ class Furniture {
         this.setFacing(FACES[(index + step + FACES.length) % FACES.length]);
     }
 
+    //turning swaps the lengths, the item must still fit on the platform afterwards
+    canTurn(){
+        return this.pos_forward + this.unit_length_right - 1 <= this.maxForward() &&
+            this.pos_right + this.unit_length_forward - 1 <= this.maxRight();
+    }
+
     rotateBlue(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right + this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
+        if (this.canTurn()){
+            this.turn(1);
         }
-        this.turn(1);
     }
 
     rotateRed(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            )
-        ){
-            return;
+        if (this.canTurn()){
+            this.turn(-1);
         }
-        this.turn(-1);
     }
 
     draw(){
@@ -609,6 +572,9 @@ class WallDecoration extends Furniture {
         this.unit_length_right = 2;
     }
 
+    //the top row and the last column are not used: the decoration is drawn a bit up and
+    //to the right of its cells (the .11 / .075 below), so there it would go into the ceiling
+    //and the right wall
     maxForward(){
         return 6;
     }
@@ -630,7 +596,9 @@ class WallDecoration extends Furniture {
         }
         M.scale(this.model_scale);
         M.turnX(Math.PI/2);
-        M.turnY(FACE_ANGLE[this.facing()]);
+        //after turnX the turn goes the other way round than on the floor,
+        //so use the opposite angle to keep the arrows pointing where the item moves
+        M.turnY(-FACE_ANGLE[this.facing()]);
     }
 
     drawArrows(){
@@ -850,16 +818,6 @@ class Bed extends FloorFurniture {
         super();
         this.unit_length_forward = 2; // forward and backward
         this.pos_right = 1;
-    }
-
-    centerOnCells(){
-        M.move(0, 0, floor.size.z / 8);
-        if (this.red_face.left){
-            M.move(-floor.size.z/8, 0, -floor.size.z/8);
-
-        } else if (this.red_face.right){
-            M.move(floor.size.z/8, 0, floor.size.z/8);
-        }
     }
 
     drawModel(){
