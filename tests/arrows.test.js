@@ -8,7 +8,7 @@ const DIR = process.env.GAME_DIR;
 const newGame = () => loadGame(DIR ? { dir: DIR } : {});
 
 const FACES = ['forward', 'right', 'backward', 'left'];
-const WALLS = (process.env.WALLS || 'back_wall').split(','); // more walls are added by later features
+const WALLS = (process.env.WALLS || 'back_wall,left_wall,right_wall').split(',');
 
 // Draws the selected item (M starts as the identity, so matrices are in room coordinates)
 // and returns its object matrix plus the world direction of both arrows.

@@ -139,6 +139,7 @@
 
         .stage {
             grid-area: stage;
+            align-self: start; /* right under the toolbar, as resizeCanvas() assumes */
             display: flex;
             justify-content: center;
         }
@@ -154,7 +155,7 @@
         .side-buttons {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             color: #ffcc00;
             font-size: clamp(15px, 1.4vw, 20px);
             max-width: 280px;
@@ -163,11 +164,16 @@
         .group {
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
+        }
+
+        .hint {
+            font-size: .8em;
+            opacity: .85;
         }
 
         .side-buttons button {
-            padding: 10px 20px;
+            padding: 8px 18px;
             background-color: #2c6262;
             color: #ffcc00;
             border: none;
@@ -201,7 +207,8 @@
                 gap: 8px;
             }
 
-            .group-label {
+            .group-label,
+            .hint {
                 grid-column: 1 / -1;
             }
 
@@ -250,9 +257,11 @@
         <div class="side-buttons left-buttons">
             <div class="group platform-group">
                 <span class="group-label">Select A Platform:</span>
-                <button onclick="selectPlatform(floor)">Select Floor</button>
-                <button onclick="selectPlatform(back_wall)">Select Back Wall</button>
-                <button onclick="selectPlatform(no_platform)">Deselect Platform</button>
+                <button onclick="choosePlatform(floor)">Select Floor</button>
+                <button onclick="choosePlatform(back_wall)">Select Back Wall</button>
+                <button onclick="choosePlatform(left_wall)">Select Left Wall</button>
+                <button onclick="choosePlatform(right_wall)">Select Right Wall</button>
+                <button onclick="choosePlatform(no_platform)">Deselect Platform</button>
                 <button onclick="hidePlatform(left_wall)">Hide Left Wall</button>
                 <button onclick="hidePlatform(right_wall)">Hide Right Wall</button>
             </div>
@@ -284,6 +293,7 @@
                 <span class="group-label">Add Wall Decorations:</span>
                 <button onclick="addItem('painting')">Painting</button>
                 <button onclick="addItem('clock')">Clock</button>
+                <span class="hint">Tip: Select Back / Left / Right Wall to hang it there.</span>
             </div>
         </div>
     </main>

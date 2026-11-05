@@ -127,6 +127,15 @@ let selectPlatform = (platform) => {
     }
 }
 
+//the "Select ..." buttons: highlight a platform, and a decoration being edited moves to the chosen wall
+let choosePlatform = (platform) => {
+    let is_wall = platform == back_wall || platform == left_wall || platform == right_wall;
+    if (is_wall && selectedInstance instanceof WallDecoration && selectedInstance.platform != platform){
+        selectedInstance.moveToWall(platform);
+    }
+    selectPlatform(platform);
+}
+
 //the 8 * 8 table of taken cells of a platform
 let platformCondi = (platform) => {
     if (platform == floor){
@@ -571,7 +580,9 @@ class FloorFurniture extends Furniture {
     }
 }
 
-//decorations hanging on a wall (pos_forward is the height, pos_right goes along the wall)
+//decorations hanging on a wall
+//pos_forward is the height, pos_right goes to the right when you face the wall from inside the room
+//(back wall: +x, left wall: towards the back, right wall: towards the front)
 //red arrow points to -z of the model, blue arrow to +x
 class WallDecoration extends Furniture {
     constructor(){
@@ -580,27 +591,40 @@ class WallDecoration extends Furniture {
         this.unit_length_right = 2;
     }
 
-    //the top row and the last column are not used: the decoration is drawn a bit up and
-    //to the right of its cells (the .11 / .075 below), so there it would go into the ceiling
-    //and the right wall
+    //the top row is not used: the decoration is drawn a bit above its cells (the .075 below),
+    //so there it would go into the ceiling
     maxForward(){
         return 6;
     }
 
+    //on the back wall it is also drawn half a cell to the right (the .11 below), so the last
+    //column would go into the right wall; on the side walls it is centred on its cells
     maxRight(){
-        return 6;
+        return this.platform == back_wall ? 6 : 7;
+    }
+
+    //hang it on another wall, at the same height, still inside the wall
+    moveToWall(wall){
+        this.platform = wall;
+        this.pos_forward = Math.min(this.pos_forward, this.maxForward() - this.unit_length_forward + 1);
+        this.pos_right = Math.min(this.pos_right, this.maxRight() - this.unit_length_right + 1);
     }
 
     moveToPlace(){
-        M.move(this.platform.position.x + ((this.pos_right - 3)*2-1) * this.platform.size.x / 8,
-            this.platform.position.y + ((this.pos_forward - 3)*2-1) * this.platform.size.y / 8,
-            -.68);
-        M.move(.11, .075, this.platform.size.z / 8);
-
-        if (this.platform == right_wall){
-            M.turnZ(Math.PI/2);
-        } else if (this.platform == left_wall){
-            M.turnZ(-Math.PI/2);
+        let wall = this.platform;
+        let height = wall.position.y + ((this.pos_forward - 3)*2-1) * wall.size.y / 8;
+        if (wall == back_wall){
+            //just in front of the back wall
+            M.move(wall.position.x + ((this.pos_right - 3)*2-1) * wall.size.x / 8, height, -.68);
+            M.move(.11, .075, wall.size.z / 8);
+        } else {
+            //side walls: centred on its cells along the wall, the same distance in front of the wall
+            //and the same height as on the back wall, turned to face into the room
+            let along = ((this.pos_right - 3)*2-1) * wall.size.z / 8 + (this.unit_length_right - 1) * wall.size.z / 8;
+            let into_room = wall == left_wall ? 1 : -1; //+x from the left wall, -x from the right wall
+            M.move(wall.position.x + into_room * (wall.size.x + .0225), height, wall.position.z - into_room * along);
+            M.move(0, .075, 0);
+            M.turnY(into_room * Math.PI / 2);
         }
         M.scale(this.model_scale);
         M.turnX(Math.PI/2);
@@ -1455,11 +1479,16 @@ function drawAllInstance(){
         instance.draw();
     } 
     for (let instance of wallInstance){
-        instance.draw();
+        //a hidden wall hides what hangs on it (except the decoration being edited)
+        if (instance.platform.visible || instance.is_under_editing){
+            instance.draw();
+        }
     }
 }
 
 function addItem(item){
+    //a new decoration goes on the selected side wall, otherwise on the back wall
+    let wall = (selectedPlatform == left_wall || selectedPlatform == right_wall) ? selectedPlatform : null;
     if(selectedInstance != null){
         //stop editing the previous one
         let can_be_added = stopChangeItem();
@@ -1500,6 +1529,9 @@ function addItem(item){
     if (item == 'sofa'){
         allInstance.push(new Sofa());
         selectedInstance = allInstance[allInstance.length - 1];
+    }
+    if (wall != null && selectedInstance instanceof WallDecoration){
+        selectedInstance.moveToWall(wall);
     }
     
 
