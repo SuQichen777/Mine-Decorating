@@ -455,6 +455,14 @@ class Furniture {
         return 7;
     }
 
+    //on whole cells and inside the platform
+    fits(){
+        return Number.isInteger(this.pos_forward) && Number.isInteger(this.pos_right) &&
+            this.pos_forward >= 0 && this.pos_right >= 0 &&
+            this.pos_forward + this.unit_length_forward - 1 <= this.maxForward() &&
+            this.pos_right + this.unit_length_right - 1 <= this.maxRight();
+    }
+
     canMoveAlong(pos, length, step, max){
         if (step > 0){
             return pos + length - 1 < max;
@@ -1039,6 +1047,283 @@ class Clock extends WallDecoration {
         //     M.R();
         // M.R();
     }
+}
+
+//------------------------------------------------------------
+//save / load / reset / clear the room
+//------------------------------------------------------------
+const SAVE_KEY = 'mine-decorating-room';
+const SAVE_VERSION = 1;
+//the names addItem() uses
+const FURNITURE_TYPES = {
+    television: Television,
+    chair: Chair,
+    computer: Computer,
+    table: Table,
+    bed: Bed,
+    sofa: Sofa,
+    painting: Painting,
+    clock: Clock,
+};
+const PLATFORMS = {
+    floor: floor,
+    back_wall: back_wall,
+    left_wall: left_wall,
+    right_wall: right_wall,
+};
+
+let nameIn = (map, value) => Object.keys(map).find(key => map[key] === value);
+
+let cellsFree = (item) => {
+    let condi = platformCondi(item.platform);
+    for (let i = item.pos_forward; i < item.pos_forward + item.unit_length_forward; i++){
+        for (let j = item.pos_right; j < item.pos_right + item.unit_length_right; j++){
+            if (condi[i][j] != 0){
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+//the room as plain data (on_table is the index of the table a small thing stands on)
+let roomData = () => {
+    let items = allInstance.concat(wallInstance);
+    return {
+        version: SAVE_VERSION,
+        items: items.map(item => {
+            let data = {
+                type: nameIn(FURNITURE_TYPES, item.constructor),
+                platform: nameIn(PLATFORMS, item.platform),
+                pos_forward: item.pos_forward,
+                pos_right: item.pos_right,
+                unit_length_forward: item.unit_length_forward,
+                unit_length_right: item.unit_length_right,
+                red_face: item.facing(),
+            };
+            if (item.is_placed_on_table){
+                data.on_table = items.indexOf(item.placing_table);
+            }
+            if (item.texture_ !== undefined){
+                data.texture_ = item.texture_;
+            }
+            return data;
+        }),
+    };
+}
+
+//save every item to localStorage
+//returns 'saved', 'not_placed' (the item being edited cannot stay where it is) or 'unavailable'
+let saveRoom = () => {
+    if (selectedInstance != null && !stopChangeItem()){
+        return 'not_placed';
+    }
+    try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(roomData()));
+        return 'saved';
+    } catch (e) {
+        return 'unavailable';
+    }
+}
+
+//rebuild the room from roomData(), including the taken cells and what stands on which table
+//throws if the data is not a valid room
+let restoreRoom = (data) => {
+    clearRoom();
+    if (!data || data.version !== SAVE_VERSION || !Array.isArray(data.items)){
+        throw new Error('unknown save format');
+    }
+    let items = data.items.map(d => {
+        let Type = FURNITURE_TYPES[d.type];
+        let platform = PLATFORMS[d.platform];
+        if (!Type || !platform){
+            throw new Error('unknown item or platform');
+        }
+        let item = new Type();
+        //decorations hang on a wall, everything else stands on the floor
+        if ((item instanceof WallDecoration) == (platform == floor)){
+            throw new Error('item on the wrong platform');
+        }
+        //its own lengths, maybe swapped by turning it
+        let f = item.unit_length_forward, r = item.unit_length_right;
+        if (!(d.unit_length_forward === f && d.unit_length_right === r) &&
+            !(d.unit_length_forward === r && d.unit_length_right === f)){
+            throw new Error('wrong size');
+        }
+        if (!FACES.includes(d.red_face)){
+            throw new Error('unknown facing');
+        }
+        item.platform = platform;
+        item.pos_forward = d.pos_forward;
+        item.pos_right = d.pos_right;
+        item.unit_length_forward = d.unit_length_forward;
+        item.unit_length_right = d.unit_length_right;
+        item.setFacing(d.red_face);
+        if (!item.fits()){
+            throw new Error('outside the platform');
+        }
+        if (item instanceof Painting){
+            if (![0, 1, 2, 3].includes(d.texture_)){
+                throw new Error('unknown painting');
+            }
+            item.texture_ = d.texture_;
+        }
+        item.is_under_editing = false;
+        return item;
+    });
+
+    //take the cells: first everything that is not a small thing (tables included),
+    //then the small things, which may stand on a table
+    let order = items.map((item, i) => i);
+    order.sort((a, b) => items[a].is_small_thing - items[b].is_small_thing);
+    for (let i of order){
+        let item = items[i];
+        let on_table = data.items[i].on_table;
+        if (on_table === undefined || on_table === null){
+            if (!cellsFree(item)){
+                throw new Error('items overlap');
+            }
+            setCells(item, 1);
+            continue;
+        }
+        let table = Number.isInteger(on_table) ? items[on_table] : undefined;
+        if (!item.is_small_thing || !table || !table.is_table ||
+            item.pos_forward < table.pos_forward || item.pos_right < table.pos_right ||
+            item.pos_forward + item.unit_length_forward > table.pos_forward + table.unit_length_forward ||
+            item.pos_right + item.unit_length_right > table.pos_right + table.unit_length_right ||
+            table.item_on_table.some(t => t.pos_forward == item.pos_forward && t.pos_right == item.pos_right)){
+            throw new Error('not a free spot on a table');
+        }
+        table.item_on_table.push(item);
+        item.is_placed_on_table = true;
+        item.placing_table = table;
+    }
+    //same order as when saved
+    for (let item of items){
+        if (item instanceof WallDecoration){
+            wallInstance.push(item);
+        } else {
+            allInstance.push(item);
+        }
+    }
+}
+
+//load the saved room; returns false (and leaves the room empty) when there is none or it is broken
+let loadRoom = () => {
+    let text = null;
+    try {
+        text = localStorage.getItem(SAVE_KEY);
+    } catch (e) {
+        return false;
+    }
+    if (!text){
+        return false;
+    }
+    try {
+        restoreRoom(JSON.parse(text));
+        return true;
+    } catch (e) {
+        console.warn('The saved room could not be loaded:', e);
+        clearRoom();
+        return false;
+    }
+}
+
+//remove every item and free every cell (the save is not touched)
+let clearRoom = () => {
+    for (let item of allInstance.concat(wallInstance)){
+        item.visible = false;
+    }
+    allInstance.length = 0;
+    wallInstance.length = 0;
+    selectedInstance = null;
+    for (let condi of [floor_condi, left_wall_condi, right_wall_condi, back_wall_condi]){
+        for (let row of condi){
+            row.fill(0);
+        }
+    }
+    selectPlatform(no_platform);
+}
+
+//the room the game starts with when there is no save
+let buildDefaultRoom = () => {
+    addItem('television');
+    moveItem('red');
+    moveItem('blue');
+    moveItem('blue');
+    stopChangeItem();
+
+    addItem('chair');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    stopChangeItem();
+
+    addItem('chair');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('blue');
+    moveItem('blue');
+    rotateItem('red');
+    rotateItem('red');
+    stopChangeItem();
+
+    addItem('table');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    stopChangeItem();
+
+    addItem('computer');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    stopChangeItem();
+
+    addItem('bed');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('blue');
+    stopChangeItem();
+
+
+
+    addItem('clock');
+    moveItem('blue');
+    moveItem('blue');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    moveItem('red');
+    stopChangeItem();
+
+    // addItem("sofa")
+    // addItem('painting');
+    // stopChangeItem();
+}
+
+let resetRoom = () => {
+    clearRoom();
+    buildDefaultRoom();
 }
 
 function drawBasicRoom(unSelectedColor = [.2, .2, .3], selectedColor = [.7, .1, .1]) {

@@ -50,12 +50,4 @@ function memoryStorage() {
     };
 }
 
-// The default room: the addItem/moveItem/stopChangeItem lines of index.html
-function buildDefaultRoom(game, dir = ROOT) {
-    const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
-    const start = html.indexOf('//add default instance');
-    const end = html.indexOf('function drawFrame');
-    game.run(html.slice(start, end));
-}
-
-module.exports = { loadGame, memoryStorage, buildDefaultRoom, ROOT };
+module.exports = { loadGame, memoryStorage, ROOT };

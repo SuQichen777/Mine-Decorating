@@ -1,7 +1,7 @@
 // Reproductions of the reported bugs. Run with: node --test tests/
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { loadGame, buildDefaultRoom } = require('./harness');
+const { loadGame } = require('./harness');
 
 const DIR = process.env.GAME_DIR; // optional: run the same tests against another checkout
 const newGame = () => loadGame(DIR ? { dir: DIR } : {});
@@ -83,7 +83,7 @@ test('bug 2: deleting a wall item does not delete floor furniture', () => {
 
 test('bug 3: Select (next) Item reaches wall items and frees the right wall cells', () => {
     const g = newGame();
-    buildDefaultRoom(g);
+    g.run('buildDefaultRoom()');
     const floorBefore = cells(g, 'floor_condi');
     const seen = [];
     for (let k = 0; k < 7; k++) {
@@ -114,7 +114,7 @@ test('bug 3: when the current item has to be removed, the next one is not skippe
 
 test('bug 4: deleting a table also deletes what is on it', () => {
     const g = newGame();
-    buildDefaultRoom(g); // the computer stands on the table
+    g.run('buildDefaultRoom()'); // the computer stands on the table
     while (g.run('selectedInstance === null || !selectedInstance.is_table')) g.run('selectItem()');
     g.run('deleteItem()');
     assert.equal(g.run("allInstance.some(i => i.is_table || i.constructor.name === 'Computer')"), false);
@@ -126,7 +126,7 @@ test('bug 4: deleting a table also deletes what is on it', () => {
 
 test('bug 4: deleting a small thing on a table frees its spot on the table', () => {
     const g = newGame();
-    buildDefaultRoom(g);
+    g.run('buildDefaultRoom()');
     while (g.run("selectedInstance === null || selectedInstance.constructor.name !== 'Computer'")) g.run('selectItem()');
     g.run('deleteItem()');
     assert.equal(g.run('allInstance.find(i => i.is_table).item_on_table.length'), 0);

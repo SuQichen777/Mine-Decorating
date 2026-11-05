@@ -44,10 +44,23 @@
             gap: 8px;
         }
 
+        .room-control {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        #status {
+            flex-basis: 100%;
+            min-height: 1.3em;
+            color: #ffcc00;
+            font-size: clamp(14px, 1.3vw, 18px);
+        }
+
         #sliderValue {
             color: #ffcc00;
             min-width: 3em;
-            font-size: clamp(16px, 1.8vw, 24px);
+            font-size: clamp(15px, 1.5vw, 24px);
         }
 
         button {
@@ -57,7 +70,7 @@
             border: none;
             border-radius: 10px;
             cursor: pointer;
-            font-size: clamp(16px, 1.9vw, 26px);
+            font-size: clamp(15px, 1.5vw, 24px);
         }
 
         button:hover {
@@ -76,7 +89,7 @@
 
         label {
             color: #ffcc00;
-            font-size: clamp(16px, 1.9vw, 26px);
+            font-size: clamp(15px, 1.5vw, 24px);
             margin-right: 2px;
         }
 
@@ -219,6 +232,12 @@
             <input type="range" id="sizeSlider" min="0.3" max="2" step="0.05" value="1.0" oninput="updateSize()">
             <span id="sliderValue">1.0</span>
         </span>
+        <span class="room-control">
+            <button onclick="onSaveRoom()">Save Room</button>
+            <button onclick="onResetRoom()">Reset Room</button>
+            <button onclick="onClearRoom()">Clear Room</button>
+        </span>
+        <span id="status" role="status"></span>
     </nav>
 
     <main class="layout">
@@ -311,12 +330,15 @@ gl.uniform3fv(uMaterials, materials.flat());
             let stage = document.querySelector('.stage');
             let toolbar = document.querySelector('.toolbar');
             let free_height = window.innerHeight - toolbar.offsetHeight - 32;
-            let css_size = Math.floor(Math.max(Math.min(stage.clientWidth, free_height), Math.min(stage.clientWidth, 260)));
+            let css_size = Math.floor(Math.max(Math.min(stage.clientWidth, free_height), Math.min(stage.clientWidth, 200)));
             let pixel_ratio = Math.min(window.devicePixelRatio || 1, 2);
+            let buffer_size = Math.round(css_size * pixel_ratio);
             canvas1.style.width = css_size + 'px';
             canvas1.style.height = css_size + 'px';
-            canvas1.width = Math.round(css_size * pixel_ratio);
-            canvas1.height = Math.round(css_size * pixel_ratio);
+            if (canvas1.width != buffer_size || canvas1.height != buffer_size){
+                canvas1.width = buffer_size;
+                canvas1.height = buffer_size;
+            }
         }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
@@ -350,80 +372,36 @@ gl.uniform3fv(uMaterials, materials.flat());
         // console.log("View Offset X:", viewOffsetX);
     });
 
-        //add default instance
-        addItem('television');
-        moveItem('red');
-        moveItem('blue');
-        moveItem('blue');
-        stopChangeItem();
+        //the saved room if there is one, otherwise the default room
+        let room_loaded = loadRoom();
+        if (!room_loaded){
+            buildDefaultRoom();
+        }
 
-        addItem('chair');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        stopChangeItem();
-
-        addItem('chair');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('blue');
-        moveItem('blue');
-        rotateItem('red');
-        rotateItem('red');
-        stopChangeItem();
-
-        addItem('table');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        stopChangeItem();
-
-        addItem('computer');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        stopChangeItem();
-
-        addItem('bed');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('blue');
-        stopChangeItem();
-
-
-
-        addItem('clock');
-        moveItem('blue');
-        moveItem('blue');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        moveItem('red');
-        stopChangeItem();
-
-        // addItem("sofa")
-        // addItem('painting');
-        // stopChangeItem();
-        
+        //save / reset / clear (reset and clear do not touch the save)
+        const showStatus = (text) => {
+            document.getElementById('status').textContent = text;
+            resizeCanvas();
+        }
+        const SAVE_MESSAGES = {
+            saved: 'Room saved. It will be loaded next time.',
+            not_placed: 'Not saved: the selected item cannot stay there. Move it, then save again.',
+            unavailable: 'Not saved: this browser does not allow storage here.',
+        };
+        function onSaveRoom() {
+            showStatus(SAVE_MESSAGES[saveRoom()]);
+        }
+        function onResetRoom() {
+            resetRoom();
+            showStatus('Default room restored. Your saved room is kept until you save again.');
+        }
+        function onClearRoom() {
+            clearRoom();
+            showStatus('Room cleared. Your saved room is kept until you save again.');
+        }
+        if (room_loaded){
+            showStatus('Your saved room was loaded.');
+        }
 
         // selectedInstance = tele;
 
