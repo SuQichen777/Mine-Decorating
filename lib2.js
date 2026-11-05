@@ -62,7 +62,7 @@ let no_platform = {
 };
 
 //default 8 * 8 floor
-floor_condi = [
+let floor_condi = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0],
@@ -72,18 +72,7 @@ floor_condi = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0]
 ]
-left_wall_condi = [
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0],
-    [0, 0, 0, 0, 0, 0, 0, 0]
-]
-
-right_wall_condi = [
+let left_wall_condi = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0],
@@ -94,7 +83,18 @@ right_wall_condi = [
     [0, 0, 0, 0, 0, 0, 0, 0]
 ]
 
-back_wall_condi = [
+let right_wall_condi = [
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0]
+]
+
+let back_wall_condi = [
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0],
     [0, 0, 0, 0, 0, 0, 0, 0],
@@ -131,11 +131,12 @@ let selectItem = () => {
     if (mode == 'view'){
         return
     }
+    let index;
     if (selectedInstance != null){
         //clear the selected place
 
-        let index = allInstance.indexOf(selectedInstance);
-        can_be_added = stopChangeItem();
+        index = allInstance.indexOf(selectedInstance);
+        let can_be_added = stopChangeItem();
         if (!can_be_added){
             deleteItem();
         }
@@ -230,8 +231,8 @@ let moveItem = (dir) => {
 //check
 let stopChangeItem = () => {
 
-    flag = true;
-    overlapping = false;
+    let flag = true;
+    let overlapping = false;
     if (selectedInstance != null){
         if(selectedPlatform != no_platform && selectedPlatform != null){
             selectPlatform(no_platform);
@@ -419,16 +420,34 @@ function changeWithCursor(){
 //1.not overlap with other furniture (use the array of allInstance)
 //2.not out of the platform (use unit_length_forward and unit_length_right)
 
-class Television {
-    constructor(){
-        this.platform = floor;
+//the four directions the red arrow can face, in the order "rotate blue" walks through them
+const FACES = ['forward', 'right', 'backward', 'left'];
+const FACE_ANGLE = {
+    forward: 0,
+    right: Math.PI / 2,
+    backward: Math.PI,
+    left: -Math.PI / 2,
+};
+//one "move red" step for each facing, as [pos_forward change, pos_right change]
+const RED_STEP = {
+    forward: [1, 0],
+    right: [0, 1],
+    backward: [-1, 0],
+    left: [0, -1],
+};
+
+//shared by every furniture: grid position, moving, rotating and the editing arrows
+//subclasses only set their size / flags and draw their own model in drawModel()
+class Furniture {
+    constructor(platform){
+        this.platform = platform;
         this.unit_length_forward = 1; // forward and backward
         this.unit_length_right = 1; // left and right
         this.pos_forward = 0;
         this.pos_right = 0;
         this.can_rotate = true;
         this.visible = true;
-        this.is_small_thing = true;
+        this.is_small_thing = false;
         this.is_placed_on_table = false;
         this.placing_table = null;
         this.is_table = false;
@@ -439,1727 +458,628 @@ class Television {
             left: false,
             right: false,
         }
+        this.model_scale = .14;
+    }
+
+    //'forward', 'right', 'backward' or 'left'
+    facing(){
+        for (let face of FACES){
+            if (this.red_face[face]){
+                return face;
+            }
+        }
+        return 'forward';
+    }
+
+    setFacing(face){
+        for (let f of FACES){
+            this.red_face[f] = (f == face);
+        }
+    }
+
+    //largest cell index the item may reach when moving forward / right
+    maxForward(){
+        return 7;
+    }
+
+    maxRight(){
+        return 7;
+    }
+
+    canMoveAlong(pos, length, step, max){
+        if (step > 0){
+            return pos + length - 1 < max;
+        }
+        if (step < 0){
+            return pos - length + 1 > 0;
+        }
+        return true;
+    }
+
+    //change the position by whole cells (a table also carries the things on it)
+    shift(d_forward, d_right){
+        this.pos_forward += d_forward;
+        this.pos_right += d_right;
+    }
+
+    tryMove(d_forward, d_right){
+        if (this.canMoveAlong(this.pos_forward, this.unit_length_forward, d_forward, this.maxForward()) &&
+            this.canMoveAlong(this.pos_right, this.unit_length_right, d_right, this.maxRight())){
+            this.shift(d_forward, d_right);
+        }
     }
 
     moveRed(){
-        // this.is_placed_on_table = false;
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                this.pos_right -= 1;
-            }
-        }
+        let [d_forward, d_right] = RED_STEP[this.facing()];
+        this.tryMove(d_forward, d_right);
     }
 
+    //blue is red turned by 90 degrees
     moveBlue(){
-        // this.is_placed_on_table = false;
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
-        }
+        let [d_forward, d_right] = RED_STEP[this.facing()];
+        this.tryMove(-d_right, d_forward);
     }
 
+    //turn by 90 degrees: swap the lengths and pick the next facing (+1 blue, -1 red)
+    turn(step){
+        let temp = this.unit_length_forward;
+        this.unit_length_forward = this.unit_length_right;
+        this.unit_length_right = temp;
+        let index = FACES.indexOf(this.facing());
+        this.setFacing(FACES[(index + step + FACES.length) % FACES.length]);
+    }
 
     rotateBlue(){
         if (
+            this.unit_length_forward != this.unit_length_right && (
             this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
+            this.pos_right + this.unit_length_forward - 1 > 7
+            )
         ){
             return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
         }
+        this.turn(1);
     }
 
     rotateRed(){
         if (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
+            this.unit_length_forward != this.unit_length_right && (
             this.pos_right - this.unit_length_forward + 1 < 0 ||
             this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
+            )
         ){
             return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
         }
+        this.turn(-1);
     }
 
     draw(){
         if (this.visible)
         {
-            let TvBackBoxPos = { x: 0, y: 0, z: 0 };
-            let TvBackBoxSize = { x: 0.3, y: 0.3, z: 0.2 };
-            //Blocks
-            let blocks = [
-                {
-                    position: { x: 0, y: 0.28, z: 0.23 },
-                    size: { x: 0.26, y: 0.02, z: 0.03 }
-                }, //Up Wall
-                {
-                    position: { x: 0, y: -0.28, z: 0.23 },
-                    size: { x: 0.26, y: 0.02, z: 0.03 }
-                }, //Down Wall
-                {
-                    position: { x: 0.28, y: 0, z: 0.23 },
-                    size: { x: 0.02, y: 0.3, z: 0.03 }
-                }, //Right Wall
-                {
-                    position: { x: -0.28, y: 0, z: 0.23 },
-                    size: { x: 0.02, y: 0.3, z: 0.03 }
-                } //Left Wall
-            ];
-
-            let buttons = [
-                (0.01, 0.01, 0.01),
-                (0.01, 0.01, 0.01),
-            ]
             M.S();
-
-            //change to specific position
-            M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
-                 -.43 ,
-                 floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
-            M.scale(.14);
-            if (this.is_placed_on_table){
-                M.move(0, .42, 0);
-            }
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(TvBackBoxPos.x, TvBackBoxPos.y, TvBackBoxPos.z)
-                .scale(TvBackBoxSize.x, TvBackBoxSize.y, TvBackBoxSize.z)
-                .draw(Cube(), [.5, .5, .5], 1, 12, -1)
-                .R();
+            //change to specific position and rotate base on red face
+            this.moveToPlace();
+            this.drawModel();
             //draw instruction
             if (this.is_under_editing){
                 selectPlatform(this.platform);
-                M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
+                this.drawArrows();
             }
-            // Draw the blocks
-            for (let block of blocks) {
-                M.S().move(block.position.x, block.position.y, block.position.z)
-                    .scale(block.size.x, block.size.y, block.size.z)
-                    .draw(Cube(), [1, 1, 1], 1, 12, -1)
-                    .R();
-            }
-            //Draw the button on down wall
-            M.S().move(blocks[1].position.x + .15, blocks[1].position.y, blocks[1].position.z + .03);
-            M.S().scale(buttons[0]).draw(Cube(), [1, 0.5, 0.5], 1);
-            M.R();
-            M.S().move(.05, 0, 0);
-            M.scale(buttons[1]).draw(Cube(), [0.5, 0.5, 1], 1);
-            M.R();
-            M.R();
-
-            //Draw the screen
-            // M.S().move(0, 0, 0.22).scale(0.255, 0.255, 0.02).draw(Cube(), [1, 1, 1], 1, cur_frame).R();
-            M.S().move(0, 0, 0.22).scale(0.255, 0.255, 0.02).draw(Cube(), [.3, .3, .3], 1).R();
-
             M.R();
         }
-
     }
 }
 
-class Chair {
+//furniture standing on the floor
+//red arrow points to +z of the model, blue arrow to +x
+class FloorFurniture extends Furniture {
     constructor(){
-        this.platform = floor;
-        this.unit_length_forward = 1; // forward and backward
-        this.unit_length_right = 1; // left and right
-        this.pos_forward = 0;
-        this.pos_right = 0;
-        this.can_rotate = true;
-        this.visible = true;
-        this.is_small_thing = false;
-        this.is_placed_on_table = false;
-        this.is_table = false;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: true,
-            backward: false,
-            left: false,
-            right: false,
-        }
+        super(floor);
     }
 
-    moveRed(){
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                this.pos_right -= 1;
-            }
-        }
+    //move from the first cell to the middle of all the cells the item covers
+    centerOnCells(){
+        M.move((this.unit_length_right - 1) * floor.size.x / 8, 0, (this.unit_length_forward - 1) * floor.size.z / 8);
     }
 
-    moveBlue(){
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
+    moveToPlace(){
+        M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
+             -.43 ,
+             floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
+        this.centerOnCells();
+        M.scale(this.model_scale);
+        if (this.is_placed_on_table){
+            M.move(0, .42, 0);
         }
+        M.turnY(FACE_ANGLE[this.facing()]);
     }
 
-
-    rotateBlue(){
-        if (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    rotateRed(){
-        if (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        if (this.visible)
-        {   
-            let seat = {
-                size: { x: .3, y: .05, z: .3 },
-                position:{ x: 0, y: 0, z: 0 },
-            }
-            let back = {
-                size: { x: .04, y: .36, z: .3 },
-                position:{ x: .35, y: .4, z: 0 },
-            }
-            let leg = {
-                size: { x: .06, y: .06, z: .2 },
-                position:{ x: 0, y: 0, z: .25 },
-            }
-
-            M.S();
-
-            //change to specific position
-            M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
-                 -.43 ,
-                 floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
-            M.scale(.14);
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(seat.position.x, seat.position.y, seat.position.z);
-                M.S();
-                    M.scale(seat.size.x, seat.size.y, seat.size.z)
-                    .draw(Cube(), [1, 1, 1], 1, 11, -1);
-                M.R();
-                M.S();
-                    M.turnX(Math.PI / 2)
-                    M.move(0,0,seat.size.z);
-                    for(let i = -1; i < 2; i+=2){
-                        M.S();
-                            M.turnX(Math.PI / 12)
-                            M.move(i * .15, -.2, 0);
-                            M.scale(leg.size.x, leg.size.y, leg.size.z)
-                            M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-                        M.R();
-                    }
-                    for(let i = -1; i < 2; i+=2){
-                        M.S();
-                            M.turnX(-Math.PI / 12)
-                            M.move(i * .15, .2, 0);
-                            M.scale(leg.size.x, leg.size.y, leg.size.z)
-                            M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-                        M.R();
-                    }
-                    
-                M.R();
-            M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
-
-            M.S().move(back.position.x, back.position.y, back.position.z)
-                .turnZ(-Math.PI / 12)
-                .scale(back.size.x, back.size.y, back.size.z)
-                .draw(Cube(), [1, 1, 1], 1, 11, -1)
-                .R();
-
-            M.R();
-        }
-
+    drawArrows(){
+        M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
+        M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
     }
 }
 
-class Computer {
+//decorations hanging on a wall (pos_forward is the height, pos_right goes along the wall)
+//red arrow points to -z of the model, blue arrow to +x
+class WallDecoration extends Furniture {
     constructor(){
-        this.platform = floor;
-        this.unit_length_forward = 1; // forward and backward
-        this.unit_length_right = 1; // left and right
-        this.pos_forward = 0;
-        this.pos_right = 0;
-        this.can_rotate = true;
-        this.visible = true;
+        super(back_wall);
+        this.unit_length_forward = 2;
+        this.unit_length_right = 2;
+    }
+
+    maxForward(){
+        return 6;
+    }
+
+    maxRight(){
+        return 6;
+    }
+
+    moveToPlace(){
+        M.move(this.platform.position.x + ((this.pos_right - 3)*2-1) * this.platform.size.x / 8,
+            this.platform.position.y + ((this.pos_forward - 3)*2-1) * this.platform.size.y / 8,
+            -.68);
+        M.move(.11, .075, this.platform.size.z / 8);
+
+        if (this.platform == right_wall){
+            M.turnZ(Math.PI/2);
+        } else if (this.platform == left_wall){
+            M.turnZ(-Math.PI/2);
+        }
+        M.scale(this.model_scale);
+        M.turnX(Math.PI/2);
+        M.turnY(FACE_ANGLE[this.facing()]);
+    }
+
+    drawArrows(){
+        M.S().move(0, .35, -.08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
+        M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
+    }
+}
+
+class Television extends FloorFurniture {
+    constructor(){
+        super();
         this.is_small_thing = true;
-        this.is_placed_on_table = false;
-        this.placing_table = null;
-        this.is_table = false;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: true,
-            backward: false,
-            left: false,
-            right: false,
-        }
     }
 
-    moveRed(){
-        // this.is_placed_on_table = false;
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                this.pos_right -= 1;
-            }
+    drawModel(){
+        let TvBackBoxPos = { x: 0, y: 0, z: 0 };
+        let TvBackBoxSize = { x: 0.3, y: 0.3, z: 0.2 };
+        //Blocks
+        let blocks = [
+            {
+                position: { x: 0, y: 0.28, z: 0.23 },
+                size: { x: 0.26, y: 0.02, z: 0.03 }
+            }, //Up Wall
+            {
+                position: { x: 0, y: -0.28, z: 0.23 },
+                size: { x: 0.26, y: 0.02, z: 0.03 }
+            }, //Down Wall
+            {
+                position: { x: 0.28, y: 0, z: 0.23 },
+                size: { x: 0.02, y: 0.3, z: 0.03 }
+            }, //Right Wall
+            {
+                position: { x: -0.28, y: 0, z: 0.23 },
+                size: { x: 0.02, y: 0.3, z: 0.03 }
+            } //Left Wall
+        ];
+
+        let buttons = [
+            (0.01, 0.01, 0.01),
+            (0.01, 0.01, 0.01),
+        ]
+
+        M.S().move(TvBackBoxPos.x, TvBackBoxPos.y, TvBackBoxPos.z)
+            .scale(TvBackBoxSize.x, TvBackBoxSize.y, TvBackBoxSize.z)
+            .draw(Cube(), [.5, .5, .5], 1, 12, -1)
+            .R();
+        // Draw the blocks
+        for (let block of blocks) {
+            M.S().move(block.position.x, block.position.y, block.position.z)
+                .scale(block.size.x, block.size.y, block.size.z)
+                .draw(Cube(), [1, 1, 1], 1, 12, -1)
+                .R();
         }
-    }
+        //Draw the button on down wall
+        M.S().move(blocks[1].position.x + .15, blocks[1].position.y, blocks[1].position.z + .03);
+        M.S().scale(buttons[0]).draw(Cube(), [1, 0.5, 0.5], 1);
+        M.R();
+        M.S().move(.05, 0, 0);
+        M.scale(buttons[1]).draw(Cube(), [0.5, 0.5, 1], 1);
+        M.R();
+        M.R();
 
-    moveBlue(){
-        // this.is_placed_on_table = false;
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
-        }
-    }
-
-
-    rotateBlue(){
-        if (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    rotateRed(){
-        if (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        if (this.visible)
-        {   
-            let bottom = {
-                size: { x: .2, y: .05, z: .3 },
-                position:{ x: 0, y: -.3, z: 0 },
-            }
-            let back = {
-                size: { x: .04, y: .25, z: .3 },
-                position:{ x: .28, y: -.1, z: 0 },
-            }
-
-            M.S();
-
-            //change to specific position
-            M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
-                 -.43 ,
-                 floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
-            M.scale(.14);
-                if (this.is_placed_on_table){
-                M.move(0, .42, 0);
-            }
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(bottom.position.x, bottom.position.y, bottom.position.z);
-                M.S();
-                    M.scale(bottom.size.x, bottom.size.y, bottom.size.z)
-                    .draw(Cube(), [1, 1, 1], 1, 12, -1);
-                M.R();
-            M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
-
-            M.S().move(back.position.x, back.position.y, back.position.z)
-                .turnZ(-Math.PI / 15)
-                .scale(back.size.x, back.size.y, back.size.z);
-                M.S();
-                    M.scale(.9);
-                    M.draw(Cube(), [1, 1, 1], 1);
-                M.R();
-                M.move(.5, 0, 0);
-                M.draw(Cube(), [1, 1, 1], 1, 12, -1);
-                M.R();
-
-            M.R();
-        }
-
+        //Draw the screen
+        // M.S().move(0, 0, 0.22).scale(0.255, 0.255, 0.02).draw(Cube(), [1, 1, 1], 1, cur_frame).R();
+        M.S().move(0, 0, 0.22).scale(0.255, 0.255, 0.02).draw(Cube(), [.3, .3, .3], 1).R();
     }
 }
 
-class Table {
+class Chair extends FloorFurniture {
+    drawModel(){
+        let seat = {
+            size: { x: .3, y: .05, z: .3 },
+            position:{ x: 0, y: 0, z: 0 },
+        }
+        let back = {
+            size: { x: .04, y: .36, z: .3 },
+            position:{ x: .35, y: .4, z: 0 },
+        }
+        let leg = {
+            size: { x: .06, y: .06, z: .2 },
+            position:{ x: 0, y: 0, z: .25 },
+        }
+
+        M.S().move(seat.position.x, seat.position.y, seat.position.z);
+            M.S();
+                M.scale(seat.size.x, seat.size.y, seat.size.z)
+                .draw(Cube(), [1, 1, 1], 1, 11, -1);
+            M.R();
+            M.S();
+                M.turnX(Math.PI / 2)
+                M.move(0,0,seat.size.z);
+                for(let i = -1; i < 2; i+=2){
+                    M.S();
+                        M.turnX(Math.PI / 12)
+                        M.move(i * .15, -.2, 0);
+                        M.scale(leg.size.x, leg.size.y, leg.size.z)
+                        M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+                    M.R();
+                }
+                for(let i = -1; i < 2; i+=2){
+                    M.S();
+                        M.turnX(-Math.PI / 12)
+                        M.move(i * .15, .2, 0);
+                        M.scale(leg.size.x, leg.size.y, leg.size.z)
+                        M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+                    M.R();
+                }
+
+            M.R();
+        M.R();
+
+        M.S().move(back.position.x, back.position.y, back.position.z)
+            .turnZ(-Math.PI / 12)
+            .scale(back.size.x, back.size.y, back.size.z)
+            .draw(Cube(), [1, 1, 1], 1, 11, -1)
+            .R();
+    }
+}
+
+class Computer extends FloorFurniture {
     constructor(){
-        this.platform = floor;
+        super();
+        this.is_small_thing = true;
+    }
+
+    drawModel(){
+        let bottom = {
+            size: { x: .2, y: .05, z: .3 },
+            position:{ x: 0, y: -.3, z: 0 },
+        }
+        let back = {
+            size: { x: .04, y: .25, z: .3 },
+            position:{ x: .28, y: -.1, z: 0 },
+        }
+
+        M.S().move(bottom.position.x, bottom.position.y, bottom.position.z);
+            M.S();
+                M.scale(bottom.size.x, bottom.size.y, bottom.size.z)
+                .draw(Cube(), [1, 1, 1], 1, 12, -1);
+            M.R();
+        M.R();
+
+        M.S().move(back.position.x, back.position.y, back.position.z)
+            .turnZ(-Math.PI / 15)
+            .scale(back.size.x, back.size.y, back.size.z);
+            M.S();
+                M.scale(.9);
+                M.draw(Cube(), [1, 1, 1], 1);
+            M.R();
+            M.move(.5, 0, 0);
+            M.draw(Cube(), [1, 1, 1], 1, 12, -1);
+            M.R();
+    }
+}
+
+class Table extends FloorFurniture {
+    constructor(){
+        super();
         this.unit_length_forward = 2; // forward and backward
         this.unit_length_right = 2; // left and right
-        this.pos_forward = 0;
-        this.pos_right = 0;
-        this.can_rotate = true;
-        this.visible = true;
-        this.is_small_thing = false;
-        this.is_placed_on_table = false;
         this.is_table = true;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: true,
-            backward: false,
-            left: false,
-            right: false,
-        }
         this.item_on_table = [];
+        this.model_scale = .28;
     }
 
-    moveRed(){
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }  
-                this.pos_right -= 1;
-            }
+    //the small things on the table move together with it
+    shift(d_forward, d_right){
+        for (let instance of this.item_on_table){
+            instance.pos_forward += d_forward;
+            instance.pos_right += d_right;
         }
+        super.shift(d_forward, d_right);
     }
 
-    moveBlue(){
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
+    drawModel(){
+        let seat = {
+            size: { x: .3, y: .05, z: .3 },
+            position:{ x: 0, y: 0, z: 0 },
         }
-    }
-
-
-    rotateBlue(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            this.pos_right 
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
+        let leg = {
+            size: { x: .06, y: .06, z: .1 },
+            position:{ x: 0, y: 0, z: .25 },
         }
-    }
 
-    rotateRed(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        // console.log(this.pos_forward, this.pos_right);
-        // console.log(this.unit_length_forward, this.unit_length_right);
-        if (this.visible)
-        {   
-            let seat = {
-                size: { x: .3, y: .05, z: .3 },
-                position:{ x: 0, y: 0, z: 0 },
-            }
-            let leg = {
-                size: { x: .06, y: .06, z: .1 },
-                position:{ x: 0, y: 0, z: .25 },
-            }
-
+        M.S().move(seat.position.x, seat.position.y, seat.position.z);
             M.S();
-
-            //change to specific position
-            M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
-                 -.43 ,
-                 floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
-            M.move(floor.size.x / 8, 0, floor.size.z / 8);
-            M.scale(.28);
-
-            
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(seat.position.x, seat.position.y, seat.position.z);
-                M.S();
-                    M.scale(seat.size.x, seat.size.y, seat.size.z)
-                    .draw(Cube(), [1, 1, 1], 1, 11, -1);
-                M.R();
-                M.S();
-                    M.turnX(Math.PI / 2)
-                    M.move(0,0,.15);
-                    for(let i = -1; i < 2; i+=2){
-                        M.S();
-                            // M.turnX(Math.PI / 12)
-                            M.move(i * .15, -.2, 0);
-                            M.scale(leg.size.x, leg.size.y, leg.size.z)
-                            M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-                        M.R();
-                    }
-                    for(let i = -1; i < 2; i+=2){
-                        M.S();
-                            // M.turnX(-Math.PI / 12)
-                            M.move(i * .15, .2, 0);
-                            M.scale(leg.size.x, leg.size.y, leg.size.z)
-                            M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-                        M.R();
-                    }
-                    
-                M.R();
+                M.scale(seat.size.x, seat.size.y, seat.size.z)
+                .draw(Cube(), [1, 1, 1], 1, 11, -1);
             M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
+            M.S();
+                M.turnX(Math.PI / 2)
+                M.move(0,0,.15);
+                for(let i = -1; i < 2; i+=2){
+                    M.S();
+                        // M.turnX(Math.PI / 12)
+                        M.move(i * .15, -.2, 0);
+                        M.scale(leg.size.x, leg.size.y, leg.size.z)
+                        M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+                    M.R();
+                }
+                for(let i = -1; i < 2; i+=2){
+                    M.S();
+                        // M.turnX(-Math.PI / 12)
+                        M.move(i * .15, .2, 0);
+                        M.scale(leg.size.x, leg.size.y, leg.size.z)
+                        M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+                    M.R();
+                }
 
             M.R();
-        }
-
+        M.R();
     }
 }
 
-class Bed {
+class Bed extends FloorFurniture {
     constructor(){
-        this.platform = floor;
+        super();
         this.unit_length_forward = 2; // forward and backward
-        this.unit_length_right = 1; // left and right
-        this.pos_forward = 0;
         this.pos_right = 1;
-        this.can_rotate = true;
-        this.visible = true;
-        this.is_small_thing = false;
-        this.is_placed_on_table = false;
-        this.is_table = false;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: true,
-            backward: false,
-            left: false,
-            right: false,
-        }
-        this.item_on_table = [];
     }
 
-    moveRed(){
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
+    centerOnCells(){
+        M.move(0, 0, floor.size.z / 8);
+        if (this.red_face.left){
+            M.move(-floor.size.z/8, 0, -floor.size.z/8);
+
         } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }  
-                this.pos_right -= 1;
-            }
+            M.move(floor.size.z/8, 0, floor.size.z/8);
         }
     }
 
-    moveBlue(){
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
+    drawModel(){
+        let seat = {
+            size: { x: .3, y: .1, z: .55 },
+            position:{ x: 0, y: -.15, z: 0 },
         }
-    }
-
-
-    rotateBlue(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            this.pos_right 
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
+        let leg = {
+            size: { x: .06, y: .06, z: .1 },
+            position:{ x: 0, y: 0, z: .25 },
         }
-    }
 
-    rotateRed(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        // console.log(this.pos_forward, this.pos_right);
-        // console.log(this.unit_length_forward, this.unit_length_right);
-
-        if (this.visible)
-        {   
-            let seat = {
-                size: { x: .3, y: .1, z: .55 },
-                position:{ x: 0, y: -.15, z: 0 },
-            }
-            let leg = {
-                size: { x: .06, y: .06, z: .1 },
-                position:{ x: 0, y: 0, z: .25 },
-            }
-
+        M.S().move(seat.position.x, seat.position.y, seat.position.z);
             M.S();
-
-            //change to specific position
-            M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
-                 -.43 ,
-                 floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
-            M.move(0, 0, floor.size.z / 8);
-            if (this.red_face.left){
-                M.move(-floor.size.z/8, 0, -floor.size.z/8);
-
-            } else if (this.red_face.right){
-                M.move(floor.size.z/8, 0, floor.size.z/8);
-            }
-            M.scale(.14);
-
-
-            
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(seat.position.x, seat.position.y, seat.position.z);
-                M.S();
-                    M.scale(seat.size.x, seat.size.y, seat.size.z)
-                    .draw(Cube(), [1, 1, 1], 1, 10, -1);
-                M.R();
-                M.S();
-                    M.turnX(Math.PI / 2)
-                    M.move(0,0,.15);
-                    for(let i = -1; i < 2; i+=2){
-                        M.S();
-                            // M.turnX(Math.PI / 12)
-                            M.move(i * .22, -.45, 0);
-                            M.scale(leg.size.x, leg.size.y, leg.size.z)
-                            M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-                        M.R();
-                    }
-                    for(let i = -1; i < 2; i+=2){
-                        M.S();
-                            // M.turnX(-Math.PI / 12)
-                            M.move(i * .22, .45, 0);
-                            M.scale(leg.size.x, leg.size.y, leg.size.z)
-                            M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-                        M.R();
-                    }
-                    
-                M.R();
-                //pillow
-                M.S().move(0, .05, -.3);
-                    M.scale(.2,.1,.1).draw(Cube(), [1, 1, 1]);
-                M.R();
-
-                //blanket
-                M.S().move(0, .1, .15);
-                    M.scale(.25,.01,.4).draw(Cube(), [1, 1, 1]);
-                M.R();
+                M.scale(seat.size.x, seat.size.y, seat.size.z)
+                .draw(Cube(), [1, 1, 1], 1, 10, -1);
             M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
-
-            M.R();
-        }
-
-    }
-}
-class Painting {
-    constructor(){
-        this.platform = back_wall;
-        this.unit_length_forward = 2; // forward and backward
-        this.unit_length_right = 2; // left and right
-        this.pos_forward = 0;
-        this.pos_right = 0;
-        this.can_rotate = true;
-        this.visible = true;
-        this.is_small_thing = false;
-        this.is_placed_on_table = false;
-        this.is_table = false;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: true,
-            backward: false,
-            left: false,
-            right: false,
-        }
-        this.item_on_table = [];
-        this.texture_ = Math.floor(Math.random() * 4);
-    }
-
-    moveRed(){
-        console.log(this.pos_forward, this.pos_right);
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }  
-                this.pos_right -= 1;
-            }
-        }
-    }
-
-    moveBlue(){
-        console.log(this.pos_forward, this.pos_right);
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
-        }
-    }
-
-
-    rotateBlue(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            this.pos_right 
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    rotateRed(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        // console.log(this.pos_forward, this.pos_right);
-        // console.log(this.unit_length_forward, this.unit_length_right);
-
-        if (this.visible)
-        {   
-            // let seat = {
-            //     size: { x: .3, y: .1, z: .55 },
-            //     position:{ x: 0, y: -.15, z: 0 },
-            // }
-            // let leg = {
-            //     size: { x: .06, y: .06, z: .1 },
-            //     position:{ x: 0, y: 0, z: .25 },
-            // }
-
             M.S();
-
-            //change to specific position
-            M.move(this.platform.position.x + ((this.pos_right - 3)*2-1) * this.platform.size.x / 8,
-                this.platform.position.y + ((this.pos_forward - 3)*2-1) * this.platform.size.y / 8,
-                -.68);
-            M.move(.11, .075, this.platform.size.z / 8);
-            
-
-            if (this.platform == right_wall){
-                M.turnZ(Math.PI/2);
-            } else if (this.platform == left_wall){
-                M.turnZ(-Math.PI/2);
-            }
-            M.scale(.28);
-            M.turnX(Math.PI/2);
-            
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(0, 0, 0)
-                .turnX(Math.PI / 2)
-                .scale(.3, .3, .01)
-                .draw(Cube(), [0,0,0], 1);
-                M.move(0,0,-.3).scale(.9);
-                M.draw(Cube(), [1, 1, 1], 1, this.texture_,-1);
-            M.R();
-
-
-            // M.S().move(0, .1, -.08).scale(.03,.02,.08).draw(Cube(), [0, 0, 0], 1).R();
-            // M.S().move(.1, .1, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 0], 1).R();
-
-            // M.S().move(seat.position.x, seat.position.y, seat.position.z);
-            //     M.S();
-            //         M.scale(seat.size.x, seat.size.y, seat.size.z)
-            //         .draw(Cube(), [1, 1, 1], 1, 10, -1);
-            //     M.R();
-            //     M.S();
-            //         M.turnX(Math.PI / 2)
-            //         M.move(0,0,.15);
-            //         for(let i = -1; i < 2; i+=2){
-            //             M.S();
-            //                 // M.turnX(Math.PI / 12)
-            //                 M.move(i * .22, -.45, 0);
-            //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
-            //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-            //             M.R();
-            //         }
-            //         for(let i = -1; i < 2; i+=2){
-            //             M.S();
-            //                 // M.turnX(-Math.PI / 12)
-            //                 M.move(i * .22, .45, 0);
-            //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
-            //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-            //             M.R();
-            //         }
-                    
-            //     M.R();
-            //     //pillow
-            //     M.S().move(0, .05, -.3);
-            //         M.scale(.2,.1,.1).draw(Cube(), [1, 1, 1]);
-            //     M.R();
-
-            //     //blanket
-            //     M.S().move(0, .1, .15);
-            //         M.scale(.25,.01,.4).draw(Cube(), [1, 1, 1]);
-            //     M.R();
-            // M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, -.08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
+                M.turnX(Math.PI / 2)
+                M.move(0,0,.15);
+                for(let i = -1; i < 2; i+=2){
+                    M.S();
+                        // M.turnX(Math.PI / 12)
+                        M.move(i * .22, -.45, 0);
+                        M.scale(leg.size.x, leg.size.y, leg.size.z)
+                        M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+                    M.R();
+                }
+                for(let i = -1; i < 2; i+=2){
+                    M.S();
+                        // M.turnX(-Math.PI / 12)
+                        M.move(i * .22, .45, 0);
+                        M.scale(leg.size.x, leg.size.y, leg.size.z)
+                        M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+                    M.R();
+                }
 
             M.R();
-        }
+            //pillow
+            M.S().move(0, .05, -.3);
+                M.scale(.2,.1,.1).draw(Cube(), [1, 1, 1]);
+            M.R();
 
+            //blanket
+            M.S().move(0, .1, .15);
+                M.scale(.25,.01,.4).draw(Cube(), [1, 1, 1]);
+            M.R();
+        M.R();
     }
 }
 
-class Clock {
+class Sofa extends FloorFurniture {
     constructor(){
-        this.platform = back_wall;
-        this.unit_length_forward = 2; // forward and backward
-        this.unit_length_right = 2; // left and right
-        this.pos_forward = 0;
-        this.pos_right = 0;
-        this.can_rotate = true;
-        this.visible = true;
-        this.is_small_thing = false;
-        this.is_placed_on_table = false;
-        this.is_table = false;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: true,
-            backward: false,
-            left: false,
-            right: false,
-        }
-        this.item_on_table = [];
-    }
-
-    moveRed(){
-        console.log(this.pos_forward, this.pos_right);
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }  
-                this.pos_right -= 1;
-            }
-        }
-    }
-
-    moveBlue(){
-        console.log(this.pos_forward, this.pos_right);
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_right += 1;
-                }
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_right -= 1;
-                }
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward -= 1;
-                }
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 6){
-                for (let instance of this.item_on_table){
-                    instance.pos_forward += 1;
-                }
-                this.pos_forward += 1;
-            }
-        }
-    }
-
-
-    rotateBlue(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            this.pos_right 
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    rotateRed(){
-        if (
-            this.unit_length_forward != this.unit_length_right && (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-            )
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        // console.log(this.pos_forward, this.pos_right);
-        // console.log(this.unit_length_forward, this.unit_length_right);
-
-        if (this.visible)
-        {   
-            // let seat = {
-            //     size: { x: .3, y: .1, z: .55 },
-            //     position:{ x: 0, y: -.15, z: 0 },
-            // }
-            // let leg = {
-            //     size: { x: .06, y: .06, z: .1 },
-            //     position:{ x: 0, y: 0, z: .25 },
-            // }
-
-            M.S();
-
-            //change to specific position
-            M.move(this.platform.position.x + ((this.pos_right - 3)*2-1) * this.platform.size.x / 8,
-                this.platform.position.y + ((this.pos_forward - 3)*2-1) * this.platform.size.y / 8,
-                -.68);
-            M.move(.11, .075, this.platform.size.z / 8);
-            
-
-            if (this.platform == right_wall){
-                M.turnZ(Math.PI/2);
-            } else if (this.platform == left_wall){
-                M.turnZ(-Math.PI/2);
-            }
-            M.scale(.14);
-            M.turnX(Math.PI/2);
-            
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(0, 0, 0)
-                .turnX(Math.PI / 2)
-                .scale(.3, .3, .1)
-                .draw(Cylinder(20), [1, 1, 1], 1);
-            M.R();
-
-            M.S().move(0, .1, -.08).scale(.03,.02,.08).draw(Cube(), [0, 0, 0], 1).R();
-            M.S().move(.1, .1, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 0], 1).R();
-
-            // M.S().move(seat.position.x, seat.position.y, seat.position.z);
-            //     M.S();
-            //         M.scale(seat.size.x, seat.size.y, seat.size.z)
-            //         .draw(Cube(), [1, 1, 1], 1, 10, -1);
-            //     M.R();
-            //     M.S();
-            //         M.turnX(Math.PI / 2)
-            //         M.move(0,0,.15);
-            //         for(let i = -1; i < 2; i+=2){
-            //             M.S();
-            //                 // M.turnX(Math.PI / 12)
-            //                 M.move(i * .22, -.45, 0);
-            //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
-            //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-            //             M.R();
-            //         }
-            //         for(let i = -1; i < 2; i+=2){
-            //             M.S();
-            //                 // M.turnX(-Math.PI / 12)
-            //                 M.move(i * .22, .45, 0);
-            //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
-            //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
-            //             M.R();
-            //         }
-                    
-            //     M.R();
-            //     //pillow
-            //     M.S().move(0, .05, -.3);
-            //         M.scale(.2,.1,.1).draw(Cube(), [1, 1, 1]);
-            //     M.R();
-
-            //     //blanket
-            //     M.S().move(0, .1, .15);
-            //         M.scale(.25,.01,.4).draw(Cube(), [1, 1, 1]);
-            //     M.R();
-            // M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, -.08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
-
-            M.R();
-        }
-
-    }
-}
-
-class Sofa {
-    constructor(){
-        this.platform = floor;
-        this.unit_length_forward = 1; // forward and backward
-        this.unit_length_right = 1; // left and right
+        super();
         this.pos_forward = 6;
         this.pos_right = 3;
-        this.can_rotate = true;
-        this.visible = true;
-        this.is_small_thing = false;
-        this.is_placed_on_table = false;
-        this.is_table = false;
-        this.is_under_editing = true;
-        this.red_face = {
-            forward: false,
-            backward: false,
-            left: false,
-            right: true,
-        }
+        this.setFacing('right');
     }
 
-    moveRed(){
-        if (this.red_face.forward){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_right - this.unit_length_right + 1> 0){
-                this.pos_right -= 1;
-            }
+    drawModel(){
+        let seat = {
+            size: { x: .3, y: .25, z: .3 },
+            position:{ x: 0, y: -.2, z: 0 },
         }
-    }
-
-    moveBlue(){
-        if (this.red_face.forward){
-            if (this.pos_right + this.unit_length_right -1 < 7){
-                this.pos_right += 1;
-            }
-        } else if (this.red_face.backward){
-            if (this.pos_right - this.unit_length_right + 1 > 0){
-                this.pos_right -= 1;
-            }
-        } else if (this.red_face.right){
-            if (this.pos_forward - this.unit_length_forward + 1> 0){
-                this.pos_forward -= 1;
-            }
-        } else if (this.red_face.left){
-            if (this.pos_forward + this.unit_length_forward - 1 < 7){
-                this.pos_forward += 1;
-            }
+        let back = {
+            size: { x: .04, y: .36, z: .3 },
+            position:{ x: .35, y: .4, z: 0 },
         }
-    }
 
-
-    rotateBlue(){
-        if (
-            this.pos_forward - this.unit_length_right + 1 < 0 ||
-            // this.pos_right - this.unit_length_forward + 1 < 0 ||
-            // this.pos_forward + this.unit_length_right - 1 > 7 ||
-            this.pos_right+ this.unit_length_forward - 1 > 7
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    rotateRed(){
-        if (
-            // this.pos_forward - this.unit_length_right + 1 < 0 ||
-            this.pos_right - this.unit_length_forward + 1 < 0 ||
-            this.pos_forward + this.unit_length_right - 1 > 7
-            // this.pos_right+ this.unit_length_forward - 1 > 7
-        ){
-            return;
-        } else {
-            let temp = this.unit_length_forward;
-            this.unit_length_forward = this.unit_length_right;
-            this.unit_length_right = temp;
-            if (this.red_face.forward){
-                this.red_face.forward = false;
-                this.red_face.left = true;
-            } else if (this.red_face.left){
-                this.red_face.left = false;
-                this.red_face.backward = true;
-            } else if (this.red_face.backward){
-                this.red_face.backward = false;
-                this.red_face.right = true;
-            } else if (this.red_face.right){
-                this.red_face.right = false;
-                this.red_face.forward = true;
-            }
-        }
-    }
-
-    draw(){
-        if (this.visible)
-        {   
-            let seat = {
-                size: { x: .3, y: .25, z: .3 },
-                position:{ x: 0, y: -.2, z: 0 },
-            }
-            let back = {
-                size: { x: .04, y: .36, z: .3 },
-                position:{ x: .35, y: .4, z: 0 },
-            }
-
+        M.S().move(seat.position.x, seat.position.y, seat.position.z);
             M.S();
-
-            //change to specific position
-            M.move(floor.position.x + ((this.pos_right - 3)*2-1) * floor.size.x / 8,
-                 -.43 ,
-                 floor.position.z + ((this.pos_forward - 3)*2-1) * floor.size.z / 8);
-            M.scale(.14);
-
-            //rotate base on red face
-            if (this.red_face.forward){
-                M.turnY(0);
-            } else if (this.red_face.right){
-                M.turnY(Math.PI / 2);
-            } else if (this.red_face.backward){
-                M.turnY(Math.PI);
-            } else if (this.red_face.left){
-                M.turnY(-Math.PI / 2);
-            }
-
-            M.S().move(seat.position.x, seat.position.y, seat.position.z);
-                M.S();
-                    M.scale(seat.size.x, seat.size.y, seat.size.z)
-                    .turnX(Math.PI / 2)
-                    .draw(Cylinder(20), [1, 1, 1], 1, 10, -1);
-                M.R();
+                M.scale(seat.size.x, seat.size.y, seat.size.z)
+                .turnX(Math.PI / 2)
+                .draw(Cylinder(20), [1, 1, 1], 1, 10, -1);
             M.R();
-            if (this.is_under_editing){
-                selectPlatform(this.platform);
-                M.S().move(0, .35, .08).scale(.02,.02,.08).draw(Cube(), [1, 0, 0], 1).R();
-                M.S().move(.1, .35, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 1], 1).R();
-            }
+        M.R();
 
-            M.S().move(back.position.x, back.position.y, back.position.z)
-                .turnY(-Math.PI /2).turnX(-Math.PI/12)
-                // .scale(back.size.x, back.size.y, back.size.z)
-                .scale(.3, .3, .3)
-                .draw(Torus(20,.5,10), [1, 1, 1], 1, 9, -1)
-                .R();
+        M.S().move(back.position.x, back.position.y, back.position.z)
+            .turnY(-Math.PI /2).turnX(-Math.PI/12)
+            // .scale(back.size.x, back.size.y, back.size.z)
+            .scale(.3, .3, .3)
+            .draw(Torus(20,.5,10), [1, 1, 1], 1, 9, -1)
+            .R();
 
-            //arm rest
-            M.S().move(-.1, .1, -.25)
-                .scale(.3, .1, .1)
-                .draw(Sphere(20), [1,1,1], 1, 9, -1)
-                .R();
-            
-            M.S().move(-.1, .1, .25)
-                .scale(.3, .1, .1)
-                .draw(Sphere(20), [1,1,1], 1, 9, -1)
-                .R();
-            M.R();
+        //arm rest
+        M.S().move(-.1, .1, -.25)
+            .scale(.3, .1, .1)
+            .draw(Sphere(20), [1,1,1], 1, 9, -1)
+            .R();
 
-        }
+        M.S().move(-.1, .1, .25)
+            .scale(.3, .1, .1)
+            .draw(Sphere(20), [1,1,1], 1, 9, -1)
+            .R();
+    }
+}
 
+class Painting extends WallDecoration {
+    constructor(){
+        super();
+        this.texture_ = Math.floor(Math.random() * 4);
+        this.model_scale = .28;
+    }
+
+    drawModel(){
+        // let seat = {
+        //     size: { x: .3, y: .1, z: .55 },
+        //     position:{ x: 0, y: -.15, z: 0 },
+        // }
+        // let leg = {
+        //     size: { x: .06, y: .06, z: .1 },
+        //     position:{ x: 0, y: 0, z: .25 },
+        // }
+
+        M.S().move(0, 0, 0)
+            .turnX(Math.PI / 2)
+            .scale(.3, .3, .01)
+            .draw(Cube(), [0,0,0], 1);
+            M.move(0,0,-.3).scale(.9);
+            M.draw(Cube(), [1, 1, 1], 1, this.texture_,-1);
+        M.R();
+
+        // M.S().move(0, .1, -.08).scale(.03,.02,.08).draw(Cube(), [0, 0, 0], 1).R();
+        // M.S().move(.1, .1, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 0], 1).R();
+
+        // M.S().move(seat.position.x, seat.position.y, seat.position.z);
+        //     M.S();
+        //         M.scale(seat.size.x, seat.size.y, seat.size.z)
+        //         .draw(Cube(), [1, 1, 1], 1, 10, -1);
+        //     M.R();
+        //     M.S();
+        //         M.turnX(Math.PI / 2)
+        //         M.move(0,0,.15);
+        //         for(let i = -1; i < 2; i+=2){
+        //             M.S();
+        //                 // M.turnX(Math.PI / 12)
+        //                 M.move(i * .22, -.45, 0);
+        //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
+        //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+        //             M.R();
+        //         }
+        //         for(let i = -1; i < 2; i+=2){
+        //             M.S();
+        //                 // M.turnX(-Math.PI / 12)
+        //                 M.move(i * .22, .45, 0);
+        //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
+        //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+        //             M.R();
+        //         }
+                
+        //     M.R();
+        //     //pillow
+        //     M.S().move(0, .05, -.3);
+        //         M.scale(.2,.1,.1).draw(Cube(), [1, 1, 1]);
+        //     M.R();
+
+        //     //blanket
+        //     M.S().move(0, .1, .15);
+        //         M.scale(.25,.01,.4).draw(Cube(), [1, 1, 1]);
+        //     M.R();
+        // M.R();
+    }
+}
+
+class Clock extends WallDecoration {
+    drawModel(){
+        // let seat = {
+        //     size: { x: .3, y: .1, z: .55 },
+        //     position:{ x: 0, y: -.15, z: 0 },
+        // }
+        // let leg = {
+        //     size: { x: .06, y: .06, z: .1 },
+        //     position:{ x: 0, y: 0, z: .25 },
+        // }
+
+        M.S().move(0, 0, 0)
+            .turnX(Math.PI / 2)
+            .scale(.3, .3, .1)
+            .draw(Cylinder(20), [1, 1, 1], 1);
+        M.R();
+
+        M.S().move(0, .1, -.08).scale(.03,.02,.08).draw(Cube(), [0, 0, 0], 1).R();
+        M.S().move(.1, .1, .02).scale(.08,.02,.02).draw(Cube(), [0, 0, 0], 1).R();
+
+        // M.S().move(seat.position.x, seat.position.y, seat.position.z);
+        //     M.S();
+        //         M.scale(seat.size.x, seat.size.y, seat.size.z)
+        //         .draw(Cube(), [1, 1, 1], 1, 10, -1);
+        //     M.R();
+        //     M.S();
+        //         M.turnX(Math.PI / 2)
+        //         M.move(0,0,.15);
+        //         for(let i = -1; i < 2; i+=2){
+        //             M.S();
+        //                 // M.turnX(Math.PI / 12)
+        //                 M.move(i * .22, -.45, 0);
+        //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
+        //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+        //             M.R();
+        //         }
+        //         for(let i = -1; i < 2; i+=2){
+        //             M.S();
+        //                 // M.turnX(-Math.PI / 12)
+        //                 M.move(i * .22, .45, 0);
+        //                 M.scale(leg.size.x, leg.size.y, leg.size.z)
+        //                 M.draw(Cylinder(20), [1, 1, 1], 1, 11, -1);
+        //             M.R();
+        //         }
+                
+        //     M.R();
+        //     //pillow
+        //     M.S().move(0, .05, -.3);
+        //         M.scale(.2,.1,.1).draw(Cube(), [1, 1, 1]);
+        //     M.R();
+
+        //     //blanket
+        //     M.S().move(0, .1, .15);
+        //         M.scale(.25,.01,.4).draw(Cube(), [1, 1, 1]);
+        //     M.R();
+        // M.R();
     }
 }
 
@@ -2299,7 +1219,7 @@ function drawAllInstance(){
 function addItem(item){
     if(selectedInstance != null){
         //stop editing the previous one
-        can_be_added = stopChangeItem();
+        let can_be_added = stopChangeItem();
         if (!can_be_added){
             deleteItem();
         }
